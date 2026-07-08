@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Unicorn Dash</title>
+<style>
+  :root{
+    --sky-top:#1b1035;
+    --sky-mid:#3a1d63;
+    --sky-bottom:#6b2e8f;
+    --magenta:#ff3d9a;
+    --gold:#ffd166;
+    --lavender:#c9b6ff;
+    --cloud:#f3ecff;
+    --ground:#241247;
+    --white:#fdfcff;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;
+    height:100%;
+    background:var(--sky-top);
+    font-family:'Nunito',system-ui,-apple-system,sans-serif;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  @font-face{
+    font-family:'Fredoka';
+    src:local('Fredoka');
+  }
+  #wrap{
+    position:relative;
+    width:100%;
+    max-width:900px;
+    aspect-ratio:16/9;
+    box-shadow:0 0 80px rgba(255,61,154,0.25);
+    border-radius:18px;
+    overflow:hidden;
+    border:2px solid rgba(201,182,255,0.35);
+  }
+  canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    background:linear-gradient(to bottom, var(--sky-top) 0%, var(--sky-mid) 55%, var(--sky-bottom) 100%);
+    touch-action:none;
+  }
+  #hud{
+    position:absolute;
+    top:14px;
+    left:14px;
+    right:14px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    pointer-events:none;
+    font-family: 'Trebuchet MS', 'Nunito', sans-serif;
+  }
+  .scroll{
+    background:linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
+    border:1px solid rgba(255,214,102,0.5);
+    border-radius:12px;
+    padding:8px 16px;
+    color:var(--white);
+    backdrop-filter:blur(3px);
+  }
+  .scroll .label{
+    font-size:11px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--lavender);
+    margin-bottom:2px;
+  }
+  .scroll .value{
+    font-size:22px;
+    font-weight:800;
+    color:var(--gold);
+    text-shadow:0 0 12px rgba(255,209,102,0.6);
+  }
+  #overlay{
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    background:radial-gradient(circle at 50% 40%, rgba(107,46,143,0.55), rgba(27,16,53,0.92));
+    color:var(--white);
+    padding:24px;
+  }
+  #overlay h1{
+    font-size:clamp(28px,6vw,46px);
+    margin:0 0 6px;
+    color:var(--gold);
+    text-shadow:0 0 20px rgba(255,209,102,0.55), 0 2px 0 rgba(0,0,0,0.3);
+    letter-spacing:0.02em;
+  }
+  #overlay p{
+    margin:4px 0 18px;
+    color:var(--lavender);
+    font-size:clamp(13px,2.4vw,16px);
+    max-width:420px;
+  }
+  #overlay .stat{
+    font-size:clamp(15px,3vw,18px);
+    color:var(--white);
+    margin-bottom:18px;
+  }
+  #overlay .stat b{color:var(--magenta);}
+  button.spell{
+    font-family:inherit;
+    font-size:16px;
+    font-weight:800;
+    letter-spacing:0.03em;
+    padding:12px 30px;
+    border-radius:999px;
+    border:none;
+    cursor:pointer;
+    color:var(--sky-top);
+    background:linear-gradient(135deg, var(--gold), var(--magenta));
+    box-shadow:0 6px 0 rgba(0,0,0,0.25), 0 0 24px rgba(255,61,154,0.5);
+    transition:transform 0.08s ease;
+  }
+  button.spell:active{transform:translateY(4px);box-shadow:0 2px 0 rgba(0,0,0,0.25);}
+  #hint{
+    position:absolute;
+    bottom:12px;
+    left:0;right:0;
+    text-align:center;
+    color:rgba(255,255,255,0.55);
+    font-size:12px;
+    letter-spacing:0.04em;
+    pointer-events:none;
+  }
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="hud">
+    <div class="scroll">
+      <div class="label">Sparkles</div>
+      <div class="value" id="scoreVal">0</div>
+    </div>
+    <div class="scroll">
+      <div class="label">Best</div>
+      <div class="value" id="bestVal">0</div>
+    </div>
+  </div>
+  <div id="hint">SPACE / TAP / CLICK to jump &nbsp;•&nbsp; hold to glide</div>
+  <div id="overlay">
+    <h1>Unicorn Dash</h1>
+    <p>Leap over crystal rocks, duck under storm clouds, and gather sparkles across the twilight vale.</p>
+    <button class="spell" id="startBtn">Begin the Run</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('wrap');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const scoreVal = document.getElementById('scoreVal');
+  const bestVal = document.getElementById('bestVal');
+
+  let W, H, DPR;
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio||1, 2);
+    const rect = wrap.getBoundingClientRect();
+    W = rect.width; H = rect.height;
+    canvas.width = W*DPR; canvas.height = H*DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const GROUND_Y = ()=> H*0.82;
+
+  let best = 0;
+  try { best = parseInt(localStorage.getItem('unicornDashBest')||'0',10) || 0; } catch(e){ best = 0; }
+  bestVal.textContent = best;
+
+  let state = 'menu'; // menu | playing | over
+  let t = 0;
+  let speed = 0;
+  const baseSpeed = 3.6;
+  let score = 0;
+  let distanceSinceSpawn = 0;
+  let nextSpawnAt = 0;
+  let shakeT = 0;
+
+  const unicorn = {
+    x: 0, y: 0, vy: 0,
+    w: 74, h: 62,
+    onGround:true,
+    gliding:false,
+    legPhase:0,
+    trail:[]
+  };
+
+  const GRAVITY = 0.62;
+  const JUMP_V = -12.4;
+  const GLIDE_GRAVITY = 0.22;
+
+  let obstacles = [];
+  let collectibles = [];
+  let clouds = [];
+  let stars = [];
+
+  function resetWorld(){
+    unicorn.x = W*0.16;
+    unicorn.y = GROUND_Y()-unicorn.h;
+    unicorn.vy = 0;
+    unicorn.onGround = true;
+    unicorn.gliding = false;
+    unicorn.trail = [];
+    obstacles = [];
+    collectibles = [];
+    score = 0;
+    speed = baseSpeed;
+    distanceSinceSpawn = 0;
+    nextSpawnAt = 280;
+    t = 0;
+    shakeT = 0;
+    scoreVal.textContent = '0';
+
+    clouds = [];
+    for(let i=0;i<6;i++){
+      clouds.push({x: Math.random()*W, y: 30+Math.random()*H*0.35, s: 0.5+Math.random()*0.9, spd: 0.3+Math.random()*0.4});
+    }
+    stars = [];
+    for(let i=0;i<50;i++){
+      stars.push({x: Math.random()*W, y: Math.random()*H*0.6, r: Math.random()*1.6+0.3, tw: Math.random()*Math.PI*2});
+    }
+  }
+
+  function spawnObstacle(){
+    const kinds = ['rock','lowRock'];
+    const kind = kinds[Math.floor(Math.random()*kinds.length)];
+    const gy = GROUND_Y();
+    if(kind==='rock'){
+      const h = 44+Math.random()*26;
+      obstacles.push({type:'rock', x:W+40, y:gy-h, w:36, h:h});
+    } else {
+      const h = 30;
+      obstacles.push({type:'rock', x:W+40, y:gy-h, w:60, h:h});
+    }
+  }
+
+  function spawnCollectible(){
+    const gy = GROUND_Y();
+    const y = gy - 60 - Math.random()*130;
+    collectibles.push({x:W+40, y:y, r:12, spin:Math.random()*Math.PI*2, kind: Math.random()<0.15?'rainbow':'star'});
+  }
+
+  function rectsOverlap(a,b){
+    return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+  }
+
+  function jump(){
+    if(state!=='playing') return;
+    if(unicorn.onGround){
+      unicorn.vy = JUMP_V;
+      unicorn.onGround = false;
+    }
+  }
+  function setGlide(v){ unicorn.gliding = v; }
+
+  window.addEventListener('keydown', e=>{
+    if(e.code==='Space'||e.code==='ArrowUp'){
+      e.preventDefault();
+      if(state==='menu'||state==='over'){ startGame(); }
+      else { jump(); setGlide(true); }
+    }
+  });
+  window.addEventListener('keyup', e=>{
+    if(e.code==='Space'||e.code==='ArrowUp'){ setGlide(false); }
+  });
+  canvas.addEventListener('pointerdown', e=>{
+    if(state==='menu'||state==='over'){ startGame(); }
+    else { jump(); setGlide(true); }
+  });
+  window.addEventListener('pointerup', ()=> setGlide(false));
+  startBtn.addEventListener('click', startGame);
+
+  function startGame(){
+    resetWorld();
+    state = 'playing';
+    overlay.classList.add('hidden');
+  }
+
+  function gameOver(){
+    state = 'over';
+    shakeT = 14;
+    if(score > best){
+      best = score;
+      try{ localStorage.setItem('unicornDashBest', String(best)); }catch(e){}
+    }
+    bestVal.textContent = best;
+    overlay.classList.remove('hidden');
+    overlay.innerHTML = `
+      <h1>The Vale Grows Quiet</h1>
+      <div class="stat">Sparkles gathered: <b>${score}</b>${score>=best && score>0 ? ' — new best!' : ''}</div>
+      <button class="spell" id="restartBtn">Run Again</button>
+    `;
+    document.getElementById('restartBtn').addEventListener('click', startGame);
+  }
+
+  function update(){
+    t++;
+    speed = baseSpeed + Math.min(t/1600, 1)*4.5;
+
+    // unicorn physics
+    const g = unicorn.gliding && !unicorn.onGround && unicorn.vy>0 ? GLIDE_GRAVITY : GRAVITY;
+    unicorn.vy += g;
+    unicorn.y += unicorn.vy;
+    const gy = GROUND_Y();
+    if(unicorn.y + unicorn.h >= gy){
+      unicorn.y = gy - unicorn.h;
+      unicorn.vy = 0;
+      unicorn.onGround = true;
+    }
+    unicorn.legPhase += unicorn.onGround ? 0.35 : 0.12;
+
+    unicorn.trail.push({x:unicorn.x+unicorn.w*0.15, y:unicorn.y+unicorn.h*0.55, life:1});
+    if(unicorn.trail.length>18) unicorn.trail.shift();
+    unicorn.trail.forEach(p=> p.life -= 0.045);
+
+    // spawn logic
+    distanceSinceSpawn += speed;
+    if(distanceSinceSpawn > nextSpawnAt){
+      distanceSinceSpawn = 0;
+      nextSpawnAt = 260 + Math.random()*140 - Math.min(t/200,70);
+      spawnObstacle();
+      if(Math.random()<0.75) spawnCollectible();
+    }
+
+    obstacles.forEach(o=> o.x -= speed);
+    obstacles = obstacles.filter(o=> o.x+o.w > -20);
+
+    collectibles.forEach(c=> { c.x -= speed; c.spin += 0.12; });
+    collectibles = collectibles.filter(c=> c.x > -30);
+
+    clouds.forEach(c=> { c.x -= c.spd; if(c.x < -80) c.x = W+80; });
+    stars.forEach(s=> s.tw += 0.03);
+
+    const uBox = {x:unicorn.x+14, y:unicorn.y+10, w:unicorn.w-28, h:unicorn.h-16};
+    for(const o of obstacles){
+      if(rectsOverlap(uBox,o)){ gameOver(); return; }
+    }
+    for(const c of collectibles){
+      const dx = (c.x)-(unicorn.x+unicorn.w*0.5);
+      const dy = (c.y)-(unicorn.y+unicorn.h*0.5);
+      if(Math.hypot(dx,dy) < c.r+26){
+        score += c.kind==='rainbow' ? 5 : 1;
+        scoreVal.textContent = score;
+        c.x = -999;
+      }
+    }
+    collectibles = collectibles.filter(c=> c.x > -100);
+
+    if(shakeT>0) shakeT--;
+  }
+
+  function drawBackground(){
+    ctx.clearRect(0,0,W,H);
+    const grad = ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,'#1b1035');
+    grad.addColorStop(0.55,'#3a1d63');
+    grad.addColorStop(1,'#6b2e8f');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+
+    stars.forEach(s=>{
+      const alpha = 0.4 + Math.sin(s.tw)*0.35;
+      ctx.fillStyle = `rgba(255,255,255,${Math.max(alpha,0.08)})`;
+      ctx.beginPath();
+      ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+      ctx.fill();
+    });
+
+    // moon
+    ctx.save();
+    ctx.fillStyle = '#ffe9b8';
+    ctx.shadowColor = 'rgba(255,233,184,0.6)';
+    ctx.shadowBlur = 30;
+    ctx.beginPath();
+    ctx.arc(W*0.82, H*0.18, 26, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    clouds.forEach(c=>{
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = '#f3ecff';
+      const s = c.s;
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, 30*s, 14*s, 0, 0, Math.PI*2);
+      ctx.ellipse(c.x+22*s, c.y+4*s, 20*s, 11*s, 0, 0, Math.PI*2);
+      ctx.ellipse(c.x-22*s, c.y+5*s, 18*s, 10*s, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // ground
+    const gy = GROUND_Y();
+    const groundGrad = ctx.createLinearGradient(0,gy,0,H);
+    groundGrad.addColorStop(0,'#2c1650');
+    groundGrad.addColorStop(1,'#150a29');
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(0,gy,W,H-gy);
+    ctx.strokeStyle = 'rgba(255,209,102,0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0,gy);
+    ctx.lineTo(W,gy);
+    ctx.stroke();
+
+    // scrolling ground detail
+    const off = (t*speed*0.6)%40;
+    ctx.strokeStyle = 'rgba(201,182,255,0.15)';
+    for(let x=-40+ (40-off); x<W; x+=40){
+      ctx.beginPath();
+      ctx.moveTo(x,gy+6);
+      ctx.lineTo(x-16,H);
+      ctx.stroke();
+    }
+  }
+
+  function drawUnicorn(){
+    const u = unicorn;
+    ctx.save();
+
+    // trail
+    u.trail.forEach(p=>{
+      if(p.life<=0) return;
+      const hue = p.life;
+      ctx.globalAlpha = Math.max(p.life,0)*0.5;
+      const g = ctx.createLinearGradient(p.x-10,p.y,p.x+10,p.y);
+      g.addColorStop(0,'#ff3d9a');
+      g.addColorStop(0.5,'#ffd166');
+      g.addColorStop(1,'#c9b6ff');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,4*p.life+1,0,Math.PI*2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    const bodyY = u.y + (u.onGround ? Math.sin(u.legPhase)*1.5 : 0);
+    const bx = u.x, by = bodyY;
+
+    // legs
+    ctx.strokeStyle = '#f3ecff';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    const legSwing = u.onGround ? Math.sin(u.legPhase)*10 : 6;
+    ctx.beginPath();
+    ctx.moveTo(bx+18, by+u.h-6);
+    ctx.lineTo(bx+18+legSwing, by+u.h+14);
+    ctx.moveTo(bx+50, by+u.h-6);
+    ctx.lineTo(bx+50-legSwing, by+u.h+14);
+    ctx.stroke();
+
+    // body
+    ctx.fillStyle = '#fdfcff';
+    ctx.beginPath();
+    ctx.ellipse(bx+38, by+u.h-22, 34, 20, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // neck/head
+    ctx.beginPath();
+    ctx.ellipse(bx+66, by+u.h-38, 15, 13, -0.4, 0, Math.PI*2);
+    ctx.fill();
+
+    // mane
+    const maneGrad = ctx.createLinearGradient(bx+40,by,bx+70,by+u.h);
+    maneGrad.addColorStop(0,'#ff3d9a');
+    maneGrad.addColorStop(0.5,'#ffd166');
+    maneGrad.addColorStop(1,'#c9b6ff');
+    ctx.fillStyle = maneGrad;
+    ctx.beginPath();
+    ctx.moveTo(bx+30, by+u.h-38);
+    ctx.quadraticCurveTo(bx+50, by+u.h-52, bx+68, by+u.h-46);
+    ctx.quadraticCurveTo(bx+52, by+u.h-40, bx+40, by+u.h-24);
+    ctx.closePath();
+    ctx.fill();
+
+    // horn
+    ctx.save();
+    ctx.translate(bx+74, by+u.h-50);
+    ctx.rotate(-0.35);
+    const hornGrad = ctx.createLinearGradient(0,0,0,-16);
+    hornGrad.addColorStop(0,'#ffd166');
+    hornGrad.addColorStop(1,'#fff7e0');
+    ctx.fillStyle = hornGrad;
+    ctx.shadowColor = 'rgba(255,209,102,0.9)';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(-3,0);
+    ctx.lineTo(3,0);
+    ctx.lineTo(0,-18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // eye
+    ctx.fillStyle = '#2b1440';
+    ctx.beginPath();
+    ctx.arc(bx+70, by+u.h-39, 1.6, 0, Math.PI*2);
+    ctx.fill();
+
+    // tail
+    ctx.strokeStyle = maneGrad;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(bx+6, by+u.h-24);
+    ctx.quadraticCurveTo(bx-14, by+u.h-14, bx-8, by+u.h+2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawObstacles(){
+    obstacles.forEach(o=>{
+      ctx.save();
+      if(o.type==='rock'){
+        const g = ctx.createLinearGradient(o.x,o.y,o.x,o.y+o.h);
+        g.addColorStop(0,'#7b5fc7');
+        g.addColorStop(1,'#3d2669');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(o.x, o.y+o.h);
+        ctx.lineTo(o.x+o.w*0.15, o.y+o.h*0.25);
+        ctx.lineTo(o.x+o.w*0.5, o.y);
+        ctx.lineTo(o.x+o.w*0.85, o.y+o.h*0.3);
+        ctx.lineTo(o.x+o.w, o.y+o.h);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,209,102,0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      } else {
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = '#e6d9ff';
+        ctx.beginPath();
+        ctx.ellipse(o.x+o.w*0.3, o.y+o.h*0.5, o.w*0.32, o.h*0.55, 0,0,Math.PI*2);
+        ctx.ellipse(o.x+o.w*0.6, o.y+o.h*0.4, o.w*0.28, o.h*0.5, 0,0,Math.PI*2);
+        ctx.ellipse(o.x+o.w*0.85, o.y+o.h*0.55, o.w*0.2, o.h*0.4, 0,0,Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
+  function drawCollectibles(){
+    collectibles.forEach(c=>{
+      ctx.save();
+      ctx.translate(c.x,c.y);
+      ctx.rotate(c.spin);
+      if(c.kind==='rainbow'){
+        const colors=['#ff3d9a','#ffd166','#8fd694','#6fb1ff','#c9b6ff'];
+        colors.forEach((col,i)=>{
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(0,6-i*1.2,10+i*2,Math.PI,0);
+          ctx.stroke();
+        });
+      } else {
+        ctx.fillStyle = '#ffd166';
+        ctx.shadowColor = 'rgba(255,209,102,0.9)';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        for(let i=0;i<5;i++){
+          const ang = -Math.PI/2 + i*(Math.PI*2/5);
+          const ang2 = ang + Math.PI/5;
+          ctx.lineTo(Math.cos(ang)*c.r, Math.sin(ang)*c.r);
+          ctx.lineTo(Math.cos(ang2)*c.r*0.45, Math.sin(ang2)*c.r*0.45);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
+  function frame(){
+    ctx.save();
+    if(shakeT>0){
+      const dx = (Math.random()-0.5)*shakeT*0.8;
+      const dy = (Math.random()-0.5)*shakeT*0.8;
+      ctx.translate(dx,dy);
+    }
+    drawBackground();
+    drawObstacles();
+    drawCollectibles();
+    drawUnicorn();
+    ctx.restore();
+
+    if(state==='playing') update();
+    requestAnimationFrame(frame);
+  }
+
+  resetWorld();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
